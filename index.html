@@ -89,40 +89,76 @@ let st='menu',bd,pp,pt,sc,ds,bst=0,fr,sp,gp,pW,sh=0,dt=0,brands=[],stars=[],clou
 try{nick=localStorage.getItem('sx_nick')||''}catch(e){}
 document.getElementById('nickIn').value=nick;
 
-// ===== GLOBAL LEADERBOARD with localStorage fallback =====
-let lb=[];
+// ===== FIREBASE GLOBAL LEADERBOARD =====
+const FB_CONFIG={
+  apiKey:"AIzaSyA1iirN17t5ccVWJ7r7EVfz0dMXUqsPM6A",
+  authDomain:"standx-flappy-candle.firebaseapp.com",
+  databaseURL:"https://standx-flappy-candle-default-rtdb.firebaseio.com",
+  projectId:"standx-flappy-candle",
+  storageBucket:"standx-flappy-candle.firebasestorage.app",
+  messagingSenderId:"924493115746",
+  appId:"1:924493115746:web:b58b83320c14d43d153c3b"
+};
+const FB_URL=FB_CONFIG.databaseURL+'/leaderboard';
 const LS_KEY='sx_flappy_lb';
-const hasCS=!!(window.storage&&typeof window.storage.get==='function');
+let lb=[];
+let fbOnline=false;
+
+async function fbFetch(path,method,body){
+  try{
+    const opts={method:method||'GET',headers:{'Content-Type':'application/json'}};
+    if(body)opts.body=JSON.stringify(body);
+    const r=await fetch(FB_URL+path+'.json',opts);
+    if(!r.ok)return null;
+    return await r.json();
+  }catch(e){return null}
+}
 
 async function loadLB(){
   try{
-    if(hasCS){
-      const r=await window.storage.get('flappy-leaderboard',true);
-      lb=r?JSON.parse(r.value):[];
+    const data=await fbFetch('','GET');
+    if(data!==null){
+      fbOnline=true;
+      lb=Object.values(data||{});
+      lb.sort((a,b)=>b.s-a.s);
+      try{localStorage.setItem(LS_KEY,JSON.stringify(lb))}catch(e){}
     }else{
+      fbOnline=false;
       const raw=localStorage.getItem(LS_KEY);
       lb=raw?JSON.parse(raw):[];
     }
-  }catch(e){lb=[]}
+  }catch(e){
+    fbOnline=false;
+    try{const raw=localStorage.getItem(LS_KEY);lb=raw?JSON.parse(raw):[];}catch(ex){lb=[];}
+  }
   renderLB('menuLB');
 }
-async function saveLB(){
-  try{
-    if(hasCS) await window.storage.set('flappy-leaderboard',JSON.stringify(lb),true);
-    else localStorage.setItem(LS_KEY,JSON.stringify(lb));
-  }catch(e){}
-}
+
 async function addToLB(name,score,dusd){
-  await loadLB();
-  lb.push({n:name||'ANON',s:score,d:dusd,t:Date.now()});
-  lb.sort((a,b)=>b.s-a.s);
-  lb=lb.slice(0,50);
-  await saveLB();
+  const entry={n:name||'ANON',s:score,d:dusd,t:Date.now()};
+  try{
+    if(fbOnline){
+      await fbFetch('/'+Date.now()+'_'+Math.random().toString(36).slice(2),'PUT',entry);
+      await loadLB();
+    }else{
+      lb.push(entry);
+      lb.sort((a,b)=>b.s-a.s);
+      lb=lb.slice(0,50);
+      try{localStorage.setItem(LS_KEY,JSON.stringify(lb))}catch(e){}
+    }
+  }catch(e){
+    lb.push(entry);
+    lb.sort((a,b)=>b.s-a.s);
+    lb=lb.slice(0,50);
+    try{localStorage.setItem(LS_KEY,JSON.stringify(lb))}catch(ex){}
+  }
 }
+
 function renderLB(elId){
   const div=document.getElementById(elId);if(!div)return;
-  if(lb.length===0){div.innerHTML='<div class="lb-t">NO SCORES YET</div>';return}
-  let h='<div class="lb-t">YOUR BEST SCORES</div>';
+  const title=fbOnline?'🌍 GLOBAL RANKING':'📱 LOCAL RANKING';
+  if(lb.length===0){div.innerHTML=`<div class="lb-t">${title}</div><div class="lb-t">NO SCORES YET</div>`;return}
+  let h=`<div class="lb-t">${title}</div>`;
   lb.slice(0,10).forEach((e,i)=>{
     const isMe=e.n===nick&&e.s===sc;
     h+=`<div class="lb-r ${isMe?'me':''}"><span class="lb-n">${i+1}.</span><span class="lb-nm">${e.n}</span><span class="lb-s">${e.s}</span></div>`;
